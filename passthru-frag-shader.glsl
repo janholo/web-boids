@@ -2,6 +2,4 @@
 
 precision mediump float;
 
-in float v_Age;
-
 void main() { discard; }

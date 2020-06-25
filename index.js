@@ -60,22 +60,19 @@ function randomRGData(size_x, size_y) {
     return new Uint8Array(d);
 }
 
-function initialParticleData(num_parts, min_age, max_age) {
+function initialParticleData(num_parts, fieldSize, minSpeed, maxSpeed) {
     var data = [];
     for (var i = 0; i < num_parts; ++i) {
         // position
-        data.push(0.0);
-        data.push(0.0);
-
-        var life = min_age + Math.random() * (max_age - min_age);
-        // set age to max. life + 1 to ensure the particle gets initialized
-        // on first invocation of particle update shader
-        data.push(life + 1);
-        data.push(life);
+        data.push(fieldSize.x * Math.random());
+        data.push(fieldSize.y * Math.random());
 
         // velocity
-        data.push(0.0);
-        data.push(0.0);
+        var speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+        var angle = Math.random() * 2.0 * Math.PI;
+
+        data.push(Math.cos(angle) * speed);
+        data.push(Math.sin(angle) * speed);
     }
     return data;
 }
@@ -97,6 +94,7 @@ function setupParticleBufferVAO(gl, buffers, vao) {
             if (buffer.attribs.hasOwnProperty(attrib_name)) {
                 /* Set up vertex attribute pointers for attributes that are stored in this buffer. */
                 var attrib_desc = buffer.attribs[attrib_name];
+
                 gl.enableVertexAttribArray(attrib_desc.location);
                 gl.vertexAttribPointer(
                     attrib_desc.location,
@@ -126,24 +124,10 @@ function setupParticleBufferVAO(gl, buffers, vao) {
 async function init(
     gl,
     num_particles,
-    particle_birth_rate,
-    min_age,
-    max_age,
-    min_theta,
-    max_theta,
     min_speed,
     max_speed,
-    gravity,
     part_img) {
     /* Do some parameter validation */
-    if (max_age < min_age) {
-        throw "Invalid min-max age range.";
-    }
-    if (max_theta < min_theta ||
-        min_theta < -Math.PI ||
-        max_theta > Math.PI) {
-        throw "Invalid theta range.";
-    }
     if (min_speed > max_speed) {
         throw "Invalid min-max speed range.";
     }
@@ -157,8 +141,6 @@ async function init(
         ],
         [
             "v_Position",
-            "v_Age",
-            "v_Life",
             "v_Velocity",
         ]);
     var render_program = await createGLProgram(
@@ -176,16 +158,6 @@ async function init(
             num_components: 2,
             type: gl.FLOAT
         },
-        i_Age: {
-            location: gl.getAttribLocation(update_program, "i_Age"),
-            num_components: 1,
-            type: gl.FLOAT
-        },
-        i_Life: {
-            location: gl.getAttribLocation(update_program, "i_Life"),
-            num_components: 1,
-            type: gl.FLOAT
-        },
         i_Velocity: {
             location: gl.getAttribLocation(update_program, "i_Velocity"),
             num_components: 2,
@@ -199,18 +171,6 @@ async function init(
             type: gl.FLOAT,
             divisor: 1
         },
-        i_Age: {
-            location: gl.getAttribLocation(render_program, "i_Age"),
-            num_components: 1,
-            type: gl.FLOAT,
-            divisor: 1
-        },
-        i_Life: {
-            location: gl.getAttribLocation(render_program, "i_Life"),
-            num_components: 1,
-            type: gl.FLOAT,
-            divisor: 1
-        }
     };
     var vaos = [
         gl.createVertexArray(),
@@ -261,7 +221,7 @@ async function init(
             vao: vaos[0],
             buffers: [{
                 buffer_object: buffers[0],
-                stride: 4 * 6,
+                stride: 4 * 4,
                 attribs: update_attrib_locations
             }]
         },
@@ -269,7 +229,7 @@ async function init(
             vao: vaos[1],
             buffers: [{
                 buffer_object: buffers[1],
-                stride: 4 * 6,
+                stride: 4 * 4,
                 attribs: update_attrib_locations
             }]
         },
@@ -277,7 +237,7 @@ async function init(
             vao: vaos[2],
             buffers: [{
                 buffer_object: buffers[0],
-                stride: 4 * 6,
+                stride: 4 * 2,
                 attribs: render_attrib_locations
             },
             {
@@ -290,7 +250,7 @@ async function init(
             vao: vaos[3],
             buffers: [{
                 buffer_object: buffers[1],
-                stride: 4 * 6,
+                stride: 4 * 2,
                 attribs: render_attrib_locations
             },
             {
@@ -302,7 +262,7 @@ async function init(
     ];
     /* Populate buffers with some initial data. */
     var initial_data =
-        new Float32Array(initialParticleData(num_particles, min_age, max_age));
+        new Float32Array(initialParticleData(num_particles, {x: 1000.0, y: 1000.0}, min_speed, max_speed));
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers[0]);
     gl.bufferData(gl.ARRAY_BUFFER, initial_data, gl.STREAM_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers[1]);
@@ -357,16 +317,11 @@ async function init(
         write: 1,
         particle_update_program: update_program,
         particle_render_program: render_program,
-        num_particles: initial_data.length / 6,
+        num_particles: num_particles,
         old_timestamp: 0.0,
         rg_noise: rg_noise_texture,
         total_time: 0.0,
-        born_particles: 0,
-        birth_rate: particle_birth_rate,
-        gravity: gravity,
-        origin: [0.0, 0.0],
-        min_theta: min_theta,
-        max_theta: max_theta,
+        mouse: [0.0, 0.0],
         min_speed: min_speed,
         max_speed: max_speed,
         particle_tex: particle_tex
@@ -397,8 +352,6 @@ function render(gl, state, timestamp_millis) {
 
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-    var num_part = state.born_particles;
-
     /* Calculate time delta. */
     var time_delta = 0.0;
     if (state.old_timestamp != 0) {
@@ -410,13 +363,6 @@ function render(gl, state, timestamp_millis) {
         }
     }
 
-    /* Here's where birth rate parameter comes into play.
-       We add to the number of active particles in the system
-       based on birth rate and elapsed time. */
-    if (state.born_particles < state.num_particles) {
-        state.born_particles = Math.min(state.num_particles,
-            Math.floor(state.born_particles + state.birth_rate * time_delta));
-    }
     /* Set the previous update timestamp for calculating time delta in the
        next frame. */
     state.old_timestamp = timestamp_millis;
@@ -433,18 +379,8 @@ function render(gl, state, timestamp_millis) {
         gl.getUniformLocation(state.particle_update_program, "u_TotalTime"),
         state.total_time);
     gl.uniform2f(
-        gl.getUniformLocation(state.particle_update_program, "u_Gravity"),
-        state.gravity[0], state.gravity[1]);
-    gl.uniform2f(
-        gl.getUniformLocation(state.particle_update_program, "u_Origin"),
-        state.origin[0],
-        state.origin[1]);
-    gl.uniform1f(
-        gl.getUniformLocation(state.particle_update_program, "u_MinTheta"),
-        state.min_theta);
-    gl.uniform1f(
-        gl.getUniformLocation(state.particle_update_program, "u_MaxTheta"),
-        state.max_theta);
+        gl.getUniformLocation(state.particle_update_program, "u_FieldSize"),
+        gl.canvas.width, gl.canvas.height);
     gl.uniform1f(
         gl.getUniformLocation(state.particle_update_program, "u_MinSpeed"),
         state.min_speed);
@@ -473,7 +409,7 @@ function render(gl, state, timestamp_millis) {
 
     /* Begin transform feedback! */
     gl.beginTransformFeedback(gl.POINTS);
-    gl.drawArrays(gl.POINTS, 0, num_part);
+    gl.drawArrays(gl.POINTS, 0, state.num_particles);
     gl.endTransformFeedback();
     gl.disable(gl.RASTERIZER_DISCARD);
     /* Don't forget to unbind the transform feedback buffer! */
@@ -492,8 +428,10 @@ function render(gl, state, timestamp_millis) {
     gl.uniform1i(
         gl.getUniformLocation(state.particle_render_program, "u_Sprite"),
         0);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, num_part);
-    //gl.drawArrays(gl.POINTS, 0, num_part);
+    gl.uniform2f(
+        gl.getUniformLocation(state.particle_render_program, "u_FieldSize"),
+        gl.canvas.width, gl.canvas.height);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, state.num_particles);
 
     /* Finally, we swap read and write buffers. The updated state will be
        rendered on the next frame. */
@@ -577,17 +515,13 @@ async function main() {
             var state =
                 await init(
                     webgl_context,
-                    800,
-                    0.5,
-                    0.8, 0.9,
-                    -Math.PI, Math.PI,
-                    0.1, 0.5,
-                    [0.0, -0.0],
+                    4,
+                    5, 100,
                     part_img);
             canvas_element.onmousemove = function (e) {
-                var x = 2.0 * (e.pageX - this.offsetLeft) / this.width - 1.0;
-                var y = -(2.0 * (e.pageY - this.offsetTop) / this.height - 1.0);
-                state.origin = [x, y];
+                // var x = 2.0 * (e.pageX - this.offsetLeft) / this.width - 1.0;
+                // var y = -(2.0 * (e.pageY - this.offsetTop) / this.height - 1.0);
+                state.mouse = [e.pageX, e.pageY];
             };
             window.requestAnimationFrame(
                 function (ts) { render(webgl_context, state, ts); });
