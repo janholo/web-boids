@@ -13,7 +13,7 @@ in vec2 i_TexCoord;
 out vec2 v_TexCoord;
 
 void main() {
-  float rectSize = 5.0;
+  float rectSize = 2.0;
 
   vec2 normalised = vec2((i_Position.x + i_Coord.x * rectSize) / u_FieldSize.x, (i_Position.y + i_Coord.y * rectSize) / u_FieldSize.y);
   vec2 norm2 = normalised * 2.0 - 1.0; 

@@ -237,7 +237,7 @@ async function init(
             vao: vaos[2],
             buffers: [{
                 buffer_object: buffers[0],
-                stride: 4 * 2,
+                stride: 4 * 4,
                 attribs: render_attrib_locations
             },
             {
@@ -250,7 +250,7 @@ async function init(
             vao: vaos[3],
             buffers: [{
                 buffer_object: buffers[1],
-                stride: 4 * 2,
+                stride: 4 * 4,
                 attribs: render_attrib_locations
             },
             {
@@ -422,8 +422,8 @@ function render(gl, state, timestamp_millis) {
     gl.useProgram(state.particle_render_program);
 
     gl.activeTexture(gl.TEXTURE0);
-    //gl.bindTexture(gl.TEXTURE_2D, state.particle_tex);
-    gl.bindTexture(gl.TEXTURE_2D, state.renderToTexture.renderTexture);
+    gl.bindTexture(gl.TEXTURE_2D, state.particle_tex);
+    //gl.bindTexture(gl.TEXTURE_2D, state.renderToTexture.renderTexture);
     //gl.bindTexture(gl.TEXTURE_2D, state.rg_noise);
     gl.uniform1i(
         gl.getUniformLocation(state.particle_render_program, "u_Sprite"),
@@ -515,7 +515,7 @@ async function main() {
             var state =
                 await init(
                     webgl_context,
-                    4,
+                    10000,
                     5, 100,
                     part_img);
             canvas_element.onmousemove = function (e) {
