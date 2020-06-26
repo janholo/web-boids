@@ -64,8 +64,8 @@ function initialParticleData(num_parts, fieldSize, minSpeed, maxSpeed) {
     var data = [];
     for (var i = 0; i < num_parts; ++i) {
         // position
-        data.push(fieldSize.x * Math.random());
-        data.push(fieldSize.y * Math.random());
+        data.push(fieldSize.x * 0.5);
+        data.push(fieldSize.y * 0.5);
 
         // velocity
         var speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
@@ -124,6 +124,8 @@ function setupParticleBufferVAO(gl, buffers, vao) {
 async function init(
     gl,
     num_particles,
+    particle_size,
+    particle_influence_area,
     min_speed,
     max_speed,
     part_img) {
@@ -133,6 +135,13 @@ async function init(
     }
 
     /* Create programs for updating and rendering the particle system. */
+    var rtt_program = await createGLProgram(
+        gl,
+        [
+            { name: "particle-render-vert.glsl", type: gl.VERTEX_SHADER },
+            { name: "particle-influence-frag.glsl", type: gl.FRAGMENT_SHADER },
+        ],
+        null);
     var update_program = await createGLProgram(
         gl,
         [
@@ -324,7 +333,8 @@ async function init(
         mouse: [0.0, 0.0],
         min_speed: min_speed,
         max_speed: max_speed,
-        particle_tex: particle_tex
+        particle_tex: particle_tex,
+        particle_size
     };
 }
 
@@ -431,6 +441,9 @@ function render(gl, state, timestamp_millis) {
     gl.uniform2f(
         gl.getUniformLocation(state.particle_render_program, "u_FieldSize"),
         gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(
+        gl.getUniformLocation(state.particle_render_program, "u_ParticleSize"),
+        state.particle_size * (gl.canvas.width + gl.canvas.height));
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, state.num_particles);
 
     /* Finally, we swap read and write buffers. The updated state will be
@@ -504,6 +517,11 @@ var particle_tex = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAA
 
 
 async function main() {
+
+    let particleCount = 100;
+    let particleSizeAsFractionOfViewport = 0.01;
+    let particleAreaOfInfluence = 0.05;
+
     var canvas_element = document.getElementById("mainCanvas");
 
     var webgl_context = canvas_element.getContext("webgl2");
@@ -515,8 +533,10 @@ async function main() {
             var state =
                 await init(
                     webgl_context,
-                    10000,
-                    5, 100,
+                    particleCount,
+                    particleSizeAsFractionOfViewport,
+                    particleAreaOfInfluence,
+                    50, 200,
                     part_img);
             canvas_element.onmousemove = function (e) {
                 // var x = 2.0 * (e.pageX - this.offsetLeft) / this.width - 1.0;
