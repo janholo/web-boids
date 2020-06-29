@@ -36,8 +36,8 @@ void main() {
     float borderAcceleration = 300.0;
     float separationFactor = 40.0;
     float alignmentFactor = 0.02;
-    float mouseArea = 0.07 * u_FieldSize.x;
-    float mouseFactor = 10.0;
+    float mouseArea = 0.1 * u_FieldSize.x;
+    float mouseFactor = 30.0;
 
     //Update velocity
     float leftBorderAcceleration = smoothstep(-1.0 * u_FieldSize.x * borderArea, 0.0, -1.0 * i_Position.x) * borderAcceleration;

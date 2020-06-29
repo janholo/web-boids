@@ -12,9 +12,9 @@ void main() {
 
   vec2 norm = (v_TexCoord - 0.5) * 2.0; // -1.0 ... 1.0
   float l = length(norm);
-  if(l < 0.1)
+  if(l < 0.02)
   {
-    l = 1.0;
+    //l = 1.0;
   }
 
   // separation force
