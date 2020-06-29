@@ -50,22 +50,12 @@ async function createGLProgram(gl, shader_list, transform_feedback_varyings) {
     return program;
 }
 
-
-function randomRGData(size_x, size_y) {
-    var d = [];
-    for (var i = 0; i < size_x * size_y; ++i) {
-        d.push(Math.random() * 255.0);
-        d.push(Math.random() * 255.0);
-    }
-    return new Uint8Array(d);
-}
-
 function initialParticleData(num_parts, fieldSize, minSpeed, maxSpeed) {
     var data = [];
     for (var i = 0; i < num_parts; ++i) {
         // position
-        data.push(fieldSize.x * 0.5);
-        data.push(fieldSize.y * 0.5);
+        data.push(Math.random() * fieldSize.x);
+        data.push(Math.random() * fieldSize.y);
 
         // velocity
         var speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
@@ -134,6 +124,10 @@ async function init(
         throw "Invalid min-max speed range.";
     }
 
+    gl.getExtension('OES_texture_float_linear');
+    gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('EXT_float_blend');
+
     /* Create programs for updating and rendering the particle system. */
     var rtt_program = await createGLProgram(
         gl,
@@ -157,6 +151,7 @@ async function init(
         [
             { name: "particle-render-vert.glsl", type: gl.VERTEX_SHADER },
             { name: "particle-render-frag.glsl", type: gl.FRAGMENT_SHADER },
+            //{ name: "particle-influence-frag.glsl", type: gl.FRAGMENT_SHADER },
         ],
         null);
 
@@ -173,6 +168,7 @@ async function init(
             type: gl.FLOAT
         }
     };
+
     var render_attrib_locations = {
         i_Position: {
             location: gl.getAttribLocation(render_program, "i_Position"),
@@ -180,6 +176,12 @@ async function init(
             type: gl.FLOAT,
             divisor: 1
         },
+        i_Velocity: {
+            location: gl.getAttribLocation(render_program, "i_Velocity"),
+            num_components: 2,
+            type: gl.FLOAT,
+            divisor: 1
+        }
     };
     var vaos = [
         gl.createVertexArray(),
@@ -271,7 +273,7 @@ async function init(
     ];
     /* Populate buffers with some initial data. */
     var initial_data =
-        new Float32Array(initialParticleData(num_particles, {x: 1000.0, y: 1000.0}, min_speed, max_speed));
+        new Float32Array(initialParticleData(num_particles, { x: 1000.0, y: 1000.0 }, min_speed, max_speed));
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers[0]);
     gl.bufferData(gl.ARRAY_BUFFER, initial_data, gl.STREAM_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers[1]);
@@ -281,32 +283,6 @@ async function init(
     for (var i = 0; i < vao_desc.length; i++) {
         setupParticleBufferVAO(gl, vao_desc[i].buffers, vao_desc[i].vao);
     }
-
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);
-
-    /* Create a texture for random values. */
-    var rg_noise_texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, rg_noise_texture);
-    gl.texImage2D(gl.TEXTURE_2D,
-        0,
-        gl.RG8,
-        512, 512,
-        0,
-        gl.RG,
-        gl.UNSIGNED_BYTE,
-        randomRGData(512, 512));
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-
-    // /* Set up blending */
-    // gl.enable(gl.BLEND);
-    // gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
 
     var particle_tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, particle_tex);
@@ -326,15 +302,16 @@ async function init(
         write: 1,
         particle_update_program: update_program,
         particle_render_program: render_program,
+        particle_rtt_program: rtt_program,
         num_particles: num_particles,
         old_timestamp: 0.0,
-        rg_noise: rg_noise_texture,
         total_time: 0.0,
-        mouse: [0.0, 0.0],
+        mouse: {x: 0.0, y: 0.0},
         min_speed: min_speed,
         max_speed: max_speed,
         particle_tex: particle_tex,
-        particle_size
+        particle_size,
+        particle_influence_area
     };
 }
 
@@ -347,6 +324,11 @@ function render(gl, state, timestamp_millis) {
     resize(gl.canvas);
 
     // First render to texture
+    // #################################################################################
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+
     // render to our targetTexture by binding the framebuffer
     gl.bindFramebuffer(gl.FRAMEBUFFER, state.renderToTexture.frameBuffer);
 
@@ -354,10 +336,25 @@ function render(gl, state, timestamp_millis) {
     gl.viewport(0, 0, state.renderToTexture.width, state.renderToTexture.height);
 
     // Clear the attachment(s).
-    gl.clearColor(1, 0, 1, 1);   // clear to blue
+    gl.clearColor(0.0, 0.0, 0.2, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    //Render to screen
+    gl.bindVertexArray(state.particle_sys_vaos[state.read + 2]);
+    gl.useProgram(state.particle_rtt_program);
+
+    gl.uniform2f(
+        gl.getUniformLocation(state.particle_rtt_program, "u_FieldSize"),
+        gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(
+        gl.getUniformLocation(state.particle_rtt_program, "u_ParticleSize"),
+        state.particle_influence_area * (gl.canvas.width + gl.canvas.height));
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, state.num_particles);
+
+    // Transform feedback phase
+    // #################################################################################
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
@@ -391,6 +388,9 @@ function render(gl, state, timestamp_millis) {
     gl.uniform2f(
         gl.getUniformLocation(state.particle_update_program, "u_FieldSize"),
         gl.canvas.width, gl.canvas.height);
+    gl.uniform2f(
+        gl.getUniformLocation(state.particle_update_program, "u_MousePos"),
+        state.mouse.x, gl.canvas.height - state.mouse.y);
     gl.uniform1f(
         gl.getUniformLocation(state.particle_update_program, "u_MinSpeed"),
         state.min_speed);
@@ -399,9 +399,9 @@ function render(gl, state, timestamp_millis) {
         state.max_speed);
     state.total_time += time_delta;
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, state.rg_noise);
+    gl.bindTexture(gl.TEXTURE_2D, state.renderToTexture.renderTexture);
     gl.uniform1i(
-        gl.getUniformLocation(state.particle_update_program, "u_RgNoise"),
+        gl.getUniformLocation(state.particle_update_program, "u_ForceField"),
         0);
 
     /* Bind the "read" buffer - it contains the state of the particle system
@@ -425,6 +425,8 @@ function render(gl, state, timestamp_millis) {
     /* Don't forget to unbind the transform feedback buffer! */
     gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
 
+    // Render to screen
+    // #################################################################################
     /* Now, we draw the particle system. Note that we're actually
        drawing the data from the "read" buffer, not the "write" buffer
        that we've written the updated data to. */
@@ -433,8 +435,6 @@ function render(gl, state, timestamp_millis) {
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, state.particle_tex);
-    //gl.bindTexture(gl.TEXTURE_2D, state.renderToTexture.renderTexture);
-    //gl.bindTexture(gl.TEXTURE_2D, state.rg_noise);
     gl.uniform1i(
         gl.getUniformLocation(state.particle_render_program, "u_Sprite"),
         0);
@@ -474,18 +474,18 @@ function resize(canvas) {
 function createRenderTex(gl) {
 
     // create to render to
-    const targetTextureWidth = 256;
-    const targetTextureHeight = 256;
+    const targetTextureWidth = 1024;
+    const targetTextureHeight = 1024;
     const targetTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, targetTexture);
 
 
     // define size and format of level 0
     const level = 0;
-    const internalFormat = gl.RGBA;
+    const internalFormat = gl.RGBA32F;
     const border = 0;
     const format = gl.RGBA;
-    const type = gl.UNSIGNED_BYTE;
+    const type = gl.FLOAT;
     const data = null;
     gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
         targetTextureWidth, targetTextureHeight, border,
@@ -519,8 +519,8 @@ var particle_tex = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAA
 async function main() {
 
     let particleCount = 100;
-    let particleSizeAsFractionOfViewport = 0.01;
-    let particleAreaOfInfluence = 0.05;
+    let particleSizeAsFractionOfViewport = 0.002;
+    let particleAreaOfInfluence = 0.03;
 
     var canvas_element = document.getElementById("mainCanvas");
 
@@ -536,12 +536,12 @@ async function main() {
                     particleCount,
                     particleSizeAsFractionOfViewport,
                     particleAreaOfInfluence,
-                    50, 200,
+                    25, 100,
                     part_img);
             canvas_element.onmousemove = function (e) {
                 // var x = 2.0 * (e.pageX - this.offsetLeft) / this.width - 1.0;
                 // var y = -(2.0 * (e.pageY - this.offsetTop) / this.height - 1.0);
-                state.mouse = [e.pageX, e.pageY];
+                state.mouse = {x: e.pageX, y: e.pageY};
             };
             window.requestAnimationFrame(
                 function (ts) { render(webgl_context, state, ts); });
