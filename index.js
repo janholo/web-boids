@@ -518,8 +518,8 @@ var particle_tex = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAA
 
 async function main() {
 
-    let particleCount = 100;
-    let particleSizeAsFractionOfViewport = 0.002;
+    let particleCount = 1000;
+    let particleSizeAsFractionOfViewport = 0.005;
     let particleAreaOfInfluence = 0.03;
 
     var canvas_element = document.getElementById("mainCanvas");

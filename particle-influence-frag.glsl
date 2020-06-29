@@ -18,10 +18,11 @@ void main() {
   }
 
   // separation force
-  float amplitude = max(1.0 - 2.0 * l, 0.0);
-  vec2 f = normalize(norm) * amplitude * scaleDownFactor;
+  float separationAmplitude = max(1.0 - 2.0 * l, 0.0);
+  vec2 separationForce = normalize(norm) * separationAmplitude * scaleDownFactor;
 
-  // 
+  float alignmentAmplitude = max(1.0 - l, 0.0);
+  vec2 alignmentForce = v_Velocity * alignmentAmplitude * scaleDownFactor;
 
-  o_FragColor = vec4(f, 0.0, 1.0);
+  o_FragColor = vec4(separationForce, alignmentForce);
 }

@@ -35,6 +35,7 @@ void main() {
     float borderArea = 0.10;
     float borderAcceleration = 300.0;
     float separationFactor = 40.0;
+    float alignmentFactor = 0.02;
     float mouseArea = 0.07 * u_FieldSize.x;
     float mouseFactor = 10.0;
 
@@ -47,17 +48,12 @@ void main() {
     v_Velocity = i_Velocity + vec2(leftBorderAcceleration + rightBorderAcceleration, bottomBorderAcceleration + topBorderAcceleration) * u_TimeDelta;
 
     v_Velocity += force.rg * separationFactor;
+    v_Velocity += force.ba * alignmentFactor;
 
     vec2 particleMouse = i_Position - u_MousePos;
     float particleMouseLength = length(particleMouse);
 
     float mouseForce = smoothstep(-1.0 * mouseArea, 0.0, -1.0 * particleMouseLength);
-    // mouseForce = 0.0;
-    // if(particleMouseLength < 200.0)
-    // {
-    //     mouseForce = 1.0;
-    // }
-
     v_Velocity += particleMouse / particleMouseLength * mouseForce * mouseFactor;
 
 
